@@ -1,1 +1,2 @@
-# Tinkof_McKinsey_Hackaton
+# Tinkof_McKinsey_Hackaton #
+Файл, содержащий решение задачи отборочного этапа совместного хакатона Тинькоффа и McKinsey.
