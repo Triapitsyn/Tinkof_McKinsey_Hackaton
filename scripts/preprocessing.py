@@ -2,6 +2,8 @@
 # готов только датасет customer.
 
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+import pandas as pd
+import numpy as np
 
 
 # Функция для LabelEncoding столбцов со строковыми значениями
@@ -84,13 +86,15 @@ def preprocess_customer(customer, react=None, encodings=[], drop_original=False,
                                                                       'first_session_day', 'first_session_hour', 'age',
                                                                       'children_cnt', 'job_position_cd']
 
-            event_encoded = pd.get_dummies(react_train['event'])
-            joint = pd.concat([react_train['customer_id'], event_encoded], axis=1)
-            cust = cust.join(joint.groupby('customer_id').mean(), on='customer_id', rsuffix='_mean')
+            event_encoded = pd.get_dummies(react['event'])
             for col in columns_to_encode:
-                cust = cust.join(cust[[col, 'like', 'dislike',
-                                       'skip', 'view']].groupby(col).mean(), on=col, rsuffix=f'_{col}_mean')
-
+                joint = pd.concat([react[['customer_id']], event_encoded], axis=1)
+                joint = joint.join(cust[[col, 'customer_id']].set_index('customer_id'),
+                                   on='customer_id')
+                joint.drop('customer_id', axis=1, inplace=True)
+                joint.columns = [name + '_to_mean_' + col for name in joint.columns]
+                cust = cust.join(joint.groupby(col + '_to_mean_' + col).mean())
+            cust.fillna(0., inplace=True)
     if drop_original:
         cols_to_drop = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title']
         cust.drop(cols_to_drop, axis=1, inplace=True)
