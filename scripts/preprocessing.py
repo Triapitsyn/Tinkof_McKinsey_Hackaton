@@ -100,3 +100,59 @@ def preprocess_customer(customer, react=None, encodings=[], drop_original=False,
         cust.drop(cols_to_drop, axis=1, inplace=True)
 
     return cust
+
+
+# Выполняет препроцессинг таблицы реакций на истории. Позволяет использовать frequency, mean
+# и std encodings.
+def preprocess_reactions(train_react, test_react, encodings=[], drop_original=False, encode_event=True):
+    train = train_react.copy()
+    test = test_react.copy()
+
+    test.drop('answer_id', axis=1, inplace=True)
+
+    train['event_dttm'] = train['event_dttm'].apply(pd.to_datetime)
+    train['event_year'] = pd.DatetimeIndex(train['event_dttm']).year
+    train['event_month'] = pd.DatetimeIndex(train['event_dttm']).month
+    train['event_day'] = pd.DatetimeIndex(train['event_dttm']).day
+    train['event_hour'] = pd.DatetimeIndex(train['event_dttm']).hour
+    train.drop('event_dttm', axis=1, inplace=True)
+
+    test['event_dttm'] = test['event_dttm'].apply(pd.to_datetime)
+    test['event_year'] = pd.DatetimeIndex(test['event_dttm']).year
+    test['event_month'] = pd.DatetimeIndex(test['event_dttm']).month
+    test['event_day'] = pd.DatetimeIndex(test['event_dttm']).day
+    test['event_hour'] = pd.DatetimeIndex(test['event_dttm']).hour
+    test.drop('event_dttm', axis=1, inplace=True)
+
+    event_encoded = pd.get_dummies(train['event'])
+    train = pd.concat([train, event_encoded], axis=1)
+
+    cols_to_encode = ['event_year', 'event_month', 'event_day', 'event_hour', 'customer_id', 'story_id']
+    for encoding in encodings:
+        if encoding == 'frequency':
+            for col in cols_to_encode:
+                vc = train[col].value_counts()
+                train = train.join(vc, on=col, rsuffix='_frequency_encoded')
+                test = test.join(vc, on=col, rsuffix='_frequency_encoded')
+        if encoding == 'mean':
+            for col in cols_to_encode:
+                joint = pd.concat([train[[col]], event_encoded], axis=1)
+                train = train.join(joint.groupby(col).mean(), on=col, rsuffix='_mean_encoded_' + col)
+                test = test.join(joint.groupby(col).mean(), on=col, rsuffix='_mean_encoded_' + col)
+        if encoding == 'std':
+            for col in cols_to_encode:
+                joint = pd.concat([train[[col]], event_encoded], axis=1)
+                train = train.join(joint.groupby(col).std(), on=col, rsuffix='_std_encoded_' + col)
+                test = test.join(joint.groupby(col).std(), on=col, rsuffix='_std_encoded_' + col)
+    if drop_original:
+        train.drop(cols_to_encode, axis=1, inplace=True)
+        test.drop(cols_to_encode, axis=1, inplace=True)
+    if encode_event:
+        train.drop('event', axis=1, inplace=True)
+    else:
+        train.drop(['dislike', 'like', 'skip', 'view'], axis=1, inplace=True)
+
+    train.fillna(0., inplace=True)
+    test.fillna(0., inplace=True)
+
+    return train, test
