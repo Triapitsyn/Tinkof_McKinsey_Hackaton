@@ -103,8 +103,9 @@ def preprocess_customer(customer, react=None, encodings=[], drop_original=False,
 
 
 # Выполняет препроцессинг таблицы реакций на истории. Позволяет использовать frequency, mean
-# и std encodings.
-def preprocess_reactions(train_react, test_react, encodings=[], drop_original=False, encode_event=True):
+# и std encodings. Также позволяет энкодить ивент как one-hot, label или никак (None).
+def preprocess_reactions(train_react, test_react, encodings=[], drop_original=False,
+                         encode_event='label', verbose=True):
     train = train_react.copy()
     test = test_react.copy()
 
@@ -126,6 +127,8 @@ def preprocess_reactions(train_react, test_react, encodings=[], drop_original=Fa
 
     event_encoded = pd.get_dummies(train['event'])
     train = pd.concat([train, event_encoded], axis=1)
+    test['dislike'], test['like'], test['view'], test['skip'] = 0, 0, 0, 0  # Иначе путаница
+    # с именами столбцов
 
     cols_to_encode = ['event_year', 'event_month', 'event_day', 'event_hour', 'customer_id', 'story_id']
     for encoding in encodings:
@@ -147,12 +150,19 @@ def preprocess_reactions(train_react, test_react, encodings=[], drop_original=Fa
     if drop_original:
         train.drop(cols_to_encode, axis=1, inplace=True)
         test.drop(cols_to_encode, axis=1, inplace=True)
-    if encode_event:
+    if encode_event == 'one-hot':
         train.drop('event', axis=1, inplace=True)
+    elif encode_event == 'label':
+        train.drop(['dislike', 'like', 'skip', 'view'], axis=1, inplace=True)
+        enc = LabelEncoder()
+        train['event'] = enc.fit_transform(train['event'])
+        if verbose:
+            print('like, view, skip, dislike = ', enc.transform(['like', 'view', 'skip', 'dislike']))
     else:
         train.drop(['dislike', 'like', 'skip', 'view'], axis=1, inplace=True)
 
     train.fillna(0., inplace=True)
     test.fillna(0., inplace=True)
+    test.drop(['like', 'dislike', 'view', 'skip'], axis=1, inplace=True)
 
     return train, test
