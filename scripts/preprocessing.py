@@ -29,8 +29,8 @@ def fill_nans_customer(cust):
 # Функция preprocess_customer выполняет препроцессинг датасета customer. Сейчас можно выбрать
 # один или несколько способов закодировать категориальные переменные - One Hot Encoding,
 # Frequency encoding и mean encoding. Соответственно, в encodings надо передавать занчения 'mean',
-# 'one-hot' или 'frequency'. Label Encoding будет по умолчанию.
-def preprocess_customer(customer, react=None, encodings=[], drop_original=False, most_common_jobs=15):
+# 'one-hot', 'std' или 'frequency'. Label Encoding будет по умолчанию.
+def preprocess_customer(customer, transactions, react=None, encodings=[], drop_original=False, most_common_jobs=15):
     cust = customer.copy()
 
     # Обработка пола, Male - 1, Female - 0. NaNы заполняем как Male, потому что мужчин больше.
@@ -60,32 +60,41 @@ def preprocess_customer(customer, react=None, encodings=[], drop_original=False,
     cust = label_encode_customer(cust)
     cust = fill_nans_customer(cust)
 
+    # Разбираемся с транзакциями
+    trs = transactions.copy()
+    groupby = trs.groupby('customer_id')
+    by_cust = pd.DataFrame(groupby['merchant_mcc'].count())
+    by_cust.columns = ['trs_num']
+    by_cust['mcc_mode'] = groupby['merchant_mcc'].agg(lambda x: x.value_counts().index[0])
+    by_cust['amt_mean'] = groupby['transaction_amt'].mean()
+    by_cust['amt_std'] = groupby['transaction_amt'].std()
+    by_cust['amt_sum'] = groupby['transaction_amt'].sum()
+    by_cust['amt_max'] = groupby['transaction_amt'].max()
+    by_cust['n_months'] = groupby['transaction_month'].apply(lambda x: x.nunique())
+    by_cust['n_merchants'] = groupby['merchant_id'].apply(lambda x: x.nunique())
+    cust = cust.join(by_cust, on='customer_id')
+
+    columns_to_encode = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title', 'mcc_mode',
+                                                              'first_session_year', 'first_session_month',
+                                                              'first_session_day', 'first_session_hour', 'age',
+                                                              'children_cnt', 'job_position_cd']
     for encoding in encodings:
         if encoding == 'one-hot':
             common_jobs = cust['job_title'].value_counts().index[:most_common_jobs]
             cust['job_title'] = cust['job_title'].apply(lambda x:
                                                         x if x in common_jobs else -1)
 
-            columns_to_encode = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title']
-            for col in columns_to_encode:
+            columns_to_oh = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title']
+            for col in columns_to_oh:
                 one_hot = pd.get_dummies(cust[col])
                 one_hot.columns = [f'{col}_one_hot_{str(val)}' for val in one_hot.columns]
                 cust = pd.concat([cust, one_hot], axis=1)
 
         if encoding == 'frequency':
-            columns_to_encode = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title',
-                                                                      'first_session_year', 'first_session_month',
-                                                                      'first_session_day', 'first_session_hour', 'age',
-                                                                      'children_cnt', 'job_position_cd']
             for col in columns_to_encode:
                 vc = cust[col].value_counts()
                 cust = cust.join(vc, on=col, rsuffix='_frequency_encoded')
         if encoding == 'mean':
-            columns_to_encode = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title',
-                                                                      'first_session_year', 'first_session_month',
-                                                                      'first_session_day', 'first_session_hour', 'age',
-                                                                      'children_cnt', 'job_position_cd']
-
             event_encoded = pd.get_dummies(react['event'])
             for col in columns_to_encode:
                 joint = pd.concat([react[['customer_id']], event_encoded], axis=1)
@@ -94,6 +103,16 @@ def preprocess_customer(customer, react=None, encodings=[], drop_original=False,
                 joint.drop('customer_id', axis=1, inplace=True)
                 joint.columns = [name + '_to_mean_' + col for name in joint.columns]
                 cust = cust.join(joint.groupby(col + '_to_mean_' + col).mean())
+            cust.fillna(0., inplace=True)
+        if encoding == 'std':
+            event_encoded = pd.get_dummies(react['event'])
+            for col in columns_to_encode:
+                joint = pd.concat([react[['customer_id']], event_encoded], axis=1)
+                joint = joint.join(cust[[col, 'customer_id']].set_index('customer_id'),
+                                   on='customer_id')
+                joint.drop('customer_id', axis=1, inplace=True)
+                joint.columns = [name + '_to_std_' + col for name in joint.columns]
+                cust = cust.join(joint.groupby(col + '_to_std_' + col).std())
             cust.fillna(0., inplace=True)
     if drop_original:
         cols_to_drop = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title']
