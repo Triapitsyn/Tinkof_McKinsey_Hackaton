@@ -103,7 +103,6 @@ def preprocess_customer(customer, transactions, react=None, encodings=[], drop_o
                 joint.drop('customer_id', axis=1, inplace=True)
                 joint.columns = [name + '_to_mean_' + col for name in joint.columns]
                 cust = cust.join(joint.groupby(col + '_to_mean_' + col).mean())
-            cust.fillna(0., inplace=True)
         if encoding == 'std':
             event_encoded = pd.get_dummies(react['event'])
             for col in columns_to_encode:
@@ -113,7 +112,7 @@ def preprocess_customer(customer, transactions, react=None, encodings=[], drop_o
                 joint.drop('customer_id', axis=1, inplace=True)
                 joint.columns = [name + '_to_std_' + col for name in joint.columns]
                 cust = cust.join(joint.groupby(col + '_to_std_' + col).std())
-            cust.fillna(0., inplace=True)
+    cust.fillna(0., inplace=True)
     if drop_original:
         cols_to_drop = [f'product_{i}' for i in range(7)] + ['marital_status_cd', 'job_title']
         cust.drop(cols_to_drop, axis=1, inplace=True)
@@ -174,7 +173,7 @@ def preprocess_reactions(train_react, test_react, encodings=[], drop_original=Fa
     elif encode_event == 'label':
         train.drop(['dislike', 'like', 'skip', 'view'], axis=1, inplace=True)
         enc = LabelEncoder()
-        train['event'] = enc.fit_transform(train['event'])
+        train['event'] = enc.fit_transform(train['event'].astype(str))
         if verbose:
             print('like, view, skip, dislike = ', enc.transform(['like', 'view', 'skip', 'dislike']))
     else:
